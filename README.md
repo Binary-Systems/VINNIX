@@ -1,7 +1,7 @@
 # VINNIX - Vincente's Imitation Unix
 VINNIX is a Real Time Executive (RTEX) for the 6809 that allows cooperative multitasking with "TASKS" writen in C.
 This executive is based on the 6800 Real Time Executive originally supplied with Motorola Real Time FORTRAN, 
-then was enhanced and adapted to the Wintek C cross-compiler in 1988-1989
+then was enhanced and adapted to the Wintek C cross-compiler in 1988-1989.  No, its nothing like UNIX, but one can dream.
 
 # VIOS - Vincente's Input/Output System
 VIOS is a set of 6809 Interrupt based IO routines for the 6850 ACIA.
