@@ -10,4 +10,4 @@ VIOS includes implementations of getc(), putc(), getchar(), and putchar() for us
 These files are assembled by the Wintek 6809 cross-assembler into *relocatable* S-Records, then linked via the Wintek linker.
 
 These modules were the basis of Binary Systems's digitized voice Annunciator / SCADA systems in the 1980s and were originally
-created by Vincente D'Ingianni @Vincente666
+created by Vincente D'Ingianni [@Vincente666](https://github.com/vincente666)
