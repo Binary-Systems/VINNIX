@@ -11,3 +11,7 @@ These files are assembled by the Wintek 6809 cross-assembler into *relocatable* 
 
 These modules were the basis of Binary Systems's digitized voice Annunciator / SCADA systems in the 1980s and were originally
 created by Vincente D'Ingianni [@Vincente666](https://github.com/vincente666)
+
+# 1989 sources
+
+`1989/` is the text recovered from the VINNIX.VDI archive. `MAIN.C`, `STRINGS.C`, `WINDEX.C`, `VINNIX.ASM`, and `VINNIX2.ASM` are the original members. The headers were expanded in the 1989 listings: `map.h`, `vinnix.h`, `windex.h`, `wyse.h`, and two dates of `stdio.h`. `vinnix.asm` and `vios.asm` at the repository root are the later sources. The files under `recovered/` are the sliced archive members and are not assembler or C source.
