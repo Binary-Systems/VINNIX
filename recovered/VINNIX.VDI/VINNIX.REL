@@ -1,0 +1,124 @@
+l of RX queue.
+     0090   8E   0123r  	LDX	#RXQUE		    Store the char at the end of the queue.
+     0093   A785        	STA	B,X
+     0095   5C          	INCB			    Increment the tail.
+     0096   F7   0144r  	STB	RXTAIL
+     0099   7C   0145r  	INC	RXCOUNT		    Increment the queue count.
+     009C   C1   20     	CMPB	#RXLEN		    If tail>length,
+     009E   2D   03     	BLT	ACIAR2
+     00A0   7F   0144r  	CLR	RXTAIL		      then tail=0.
+     00A3   39          ACIAR2	RTS			    Return
+                        
+     00A4   7D   0122r  ACIATX	TST	TXCOUNT		If TX queue is empty,
+     00A7   26   0C     	BNE	ACIAT1
+     00A9   F6   0146r  	LDB	ACIAst		  then disable the TX interrupt
+     00AC   C4   9F     	ANDB	#$9F
+     00AE   F7   0146r  	STB	ACIAst
+     00B1   F7   8418   	STB	ACIA
+     00B4   39          	RTS			  and return.
+                        
+     00B5   F6   0120r  ACIAT1	LDB	TXHEAD		  Else get char from head of queue.
+     00B8   8E   0100r  	LDX	#TXQUE
+     00BB   A685        	LDA	B,X
+     00BD   B7   8419   	STA	ACIA+1		    Send it out of the ACIA.
+     00C0   7A   0122r  	DEC	TXCOUNT		    Decrement the queue count.
+     00C3   5C          	INCB			    Increment the head.
+     00C4   F7   0120r  	STB	TXHEAD
+     00C7   C1   20     	CMPB	#TXLEN		    If head>length,
+     00C9   2D   03     	BLT	ACIAT2
+     00CB   7F   0120r  	CLR	TXHEAD		      then head=0
+     00CE   39          ACIAT2	RTS			    Return.
+                        
+                        
+     00CF               	PSCT
+
+
+
+VINNIX - Vinnie's Immitation UNIX                   Wintek 6809 Assembler, V3.0 r14    Page 5
+Master Memory Configuration File                    05/25/89    11:09:40
+
+
+     00CF   80   02     getc	SUBA	#2
+     00D1   27   03     	BEQ	getc0
+     00D3   BD   0000x  	JSR	.LINK
+                        
+     00D6   8D   15     getc0	BSR	getchr0
+     00D8   25   FC     	BCS	getc0
+     00DA   34   06     	PSHS	D
+     00DC   86   02     	LDA	#2
+     00DE   8D   72     	BSR	putchar
+     00E0   35   10     	PULS	X
+     00E2   3262        	LEAS	2,S
+     00E4   6E84        	JMP	0,X
+                        
+                        
+     00E6               	PSCT
+     00E6   80   00     getchar	SUBA	#0
+     00E8   27   03     	BEQ	getchr0
+     00EA   BD   0000x  	JSR	.LINK
+                        
+     00ED   7D   0145r  getchr0	TST	RXCOUNT
+     00F0   26   06     	BNE	getchr1
+     00F2   5F4F        	CLRD
+     00F4   1A01        	SEC
+     00F6   20   33     	BRA	getchr5
+     00F8   B6   0143r  getchr1	LDA	RXHEAD
+     00FB   8E   0123r  	LDX	#RXQUE
+     00FE   E686        	LDB	A,X
+     0100   4C          	INCA
+     0101   B7   0143r  	STA	RXHEAD
+     0104   81   20     	CMPA	#RXLEN
+     0106   2D   03     	BLT	getchr2
+     0108   7F   0143r  	CLR	RXHEAD
+                        
+     010B   7A   0145r  getchr2	DEC	RXCOUNT
+     010E   1CFE        	CLC
+     0110   B6   0146r  	LDA	ACIAst
+     0113   8A   80     	ORA	#$80
+     0115   B7   0146r  	STA	ACIAst
+     0118   B7   8418   	STA	ACIA
+                        
+     011B   4F          getchr3	CLRA
+     011C   C1   0D     	CMPB	#CR
+     011E   26   04     	BNE	getchr4
+     0120   C6   0A     	LDB	#LF
+     0122   20   07     	BRA	getchr5
+     0124   C1   04     getchr4	CMPB	#CTRLD
+     0126   26   03     	BNE	getchr5
+     0128   CC   FFFF   	LDD	#EOF
+     012B   5D          getchr5	TSTB
+     012C   39          	RTS
+                        
+                        
+     012D               	PSCT
+     012D   80   04     putc	SUBA	#4
+     012F   27   03     	BEQ	putc0
+
+
+
+VINNIX - Vinnie's Immitation UNIX                   Wintek 6809 Assembler, V3.0 r14    Page 6
+Master Memory Configuration File                    05/25/89    11:09:40
+
+
+     0131   BD   0000x  	JSR	.LINK
+                        
+     0134   EC64        putc0	LDD	4,S
+     0136   34   06     putc1	PSHS	D
+     0138   86   02     	LDA	#2
+     013A   8D   16     	BSR	putchar
+     013C   25   F8     	BCS	putc1
+     013E   C1   0A     	CMPB	#LF
+     0140   26   0A     	BNE	putc3
+     0142   C6   0D     	LDB	#CR
+     0144   86   02     	LDA	#2
+     0146   34   06     putc2	PSHS	D
+     0148   8D   08     	BSR	putchar
+     014A   25   FA     	BCS	putc2
+     014C   35   10     putc3	PULS	X
+     014E   3264        	LEAS	4,S		Does not affect Z bit.
+     0150   6E84        	JMP	0,X
+                        
+                        
+     0152               	PSCT
+     0152   80   02     putchar	SUBA	#2
+     0154   

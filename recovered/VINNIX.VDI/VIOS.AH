@@ -1,0 +1,10 @@
+56   BD   0000x  	JSR	.LINK
+                        
+     0159   E663        putchr0	LDB	3,S
+     015B   B6   0122r  putch00	LDA	TXCOUNT
+     015E   81   20     	CMPA	#TXLEN
+     0160   2D   04     	BLT	putchr1
+     0162   1A01        	SEC
+     0164   20   23     	BRA	putchr3
+                        
+     0166   

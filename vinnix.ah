@@ -1,0 +1,77 @@
+* Recovered from 2277-alt/vinnix.lst (1992-09-23) and 6001/VINNIX.LST (1994-08-07).
+* Those two include listings match. VINNIX.VDI/VINNIX.AH is not assembler source.
+*
+WDT	EQU	$8402
+WDTMSK	EQU	8
+
+
+* Stack Size
+
+STACKLEN	EQU	$100
+
+*
+* MACRO DEFINITIONS
+*
+
+* CALL MACRO - USES SWI2 TO TRANSFER CONTROL TO
+* CALLED FUNCTION. ARGUMENTS MUST BE PUSHED
+* ONTO THE U-STACK BEFORE EACH CALL. THE
+* MACRO PUSHU MAY BE USED TO ACCOMPLISH
+* THIS IF THE ARGUMENTS ARE CONSTANTS.
+
+TRAP   MACR
+       SWI2
+       FCB    \0
+       ENDM
+
+* MACRO TO DEFINE CODES FOR REAL TIME
+* FUNCTIONS
+
+SEQ    MACR
+\0     EQU    COUNT
+COUNT  SET    COUNT+1
+       ENDM
+
+
+COUNT  SET    0
+       SEQ    SETRT
+       SEQ    START
+       SEQ    STARTV
+       SEQ    WAITZ
+       SEQ    WAIT
+       SEQ    WAITE
+       SEQ    ATTCH
+       SEQ    WTWTO
+
+RETURN MACR
+       JMP    NEXT$
+       ENDM
+
+
+*
+* RTEX
+* real time executive for the 6809
+*
+* this executive is based on the 6800 real
+* time executive supplied with motorola real
+* time fortran.
+*
+* revision 1.0 by Caron Luk on June, 1989
+* Added mpu option.
+* Revision 1.1 By Caron Luk.
+* 5/21/90 The system clock actually at 300.4807692Hz ((4MHz/416)/32)
+*	  By requiring .5 p more every second, we are requiring 1661 
+*	  more p every day.  To cancel these p, 1 p sub every min, 9 p
+*	  every hour and 5 p every day, which sum up to 1661.  Now, the
+*	  different is .538528 p /day, which is 196.56272 p / yr or 2/3 
+*         of a sec slower.
+*
+* revision 1.1 by caron on June,1990
+* Modified int1 such that board with reverse logic can use vinnix.asm.
+* mask byte that with all LSBs set mean that ctr reg is in reverse logic
+* interrupt bit clr when there is an interrupt request.  But the bit must 
+* on the MSBs side, and RTEX will examine that ctr reg with the MSBs of 
+* the mask, and transfer with the whole byte of the ctr reg to the handler
+* if interrupt request is indicated.
+*
+

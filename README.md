@@ -11,3 +11,9 @@ These files are assembled by the Wintek 6809 cross-assembler into *relocatable* 
 
 These modules were the basis of Binary Systems's digitized voice Annunciator / SCADA systems in the 1980s and were originally
 created by Vincente D'Ingianni [@Vincente666](https://github.com/vincente666)
+
+# Recovered include
+
+`vinnix.ah` is the include recovered from the 1992-09-23 and 1994-08-07 listings. Those two listings match.
+
+`recovered/VINNIX.VDI/` is the unzipped mail attachment. Several members that carry source names are S-record fragments, not assembly or C. `recovered/DOCUMENTATION.md` records which members are readable.

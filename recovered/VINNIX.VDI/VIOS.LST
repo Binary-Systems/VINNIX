@@ -1,0 +1,1034 @@
+OBAL	getchar,putchar,getc,putc,out2h,out4h
+
+	EXTERN	main,.LINK
+
+_WINTEK		EQU	0
+_MIKUL3		EQU	0
+_EXOR		EQU	1
+_Z80SIO		EQU	1
+
+	INCLUDE	"c:\include\map.asm"
+	INCLUDE	"c:\include\stdio.asm"
+	INCLUDE "c:\include\osdef.asm"
+
+
+	DSCT
+	RMB	STACKLEN
+SSTACK$ EQU	*
+
+TXQUE	RMB	TXLEN
+TXHEAD	RMB	1
+TXTAIL	RMB	1
+TXCOUNT	RMB	1
+
+RXQUE	RMB	RXLEN
+RXHEAD	RMB	1
+RXTAIL	RMB	1
+RXCOUNT	RMB	1
+
+ACIAst	RMB	1
+
+
+SIOTXQUE	RMB	8*TXLEN
+SIOTXHEAD	RMB	8
+SIOTXTAIL	RMB	8
+SIOTXCNT	RMB	8
+SIORXQUE	RMB	8*RXLEN
+SIORXHEAD	RMB	8
+SIORXTAIL	RMB	8
+SIORXCNT	RMB	8
+
+SIOWR1		RMB	8
+
+
+	PSCT
+RESTART$ SEI
+	LDS	#SSTACK$
+	LDX	#RESTART$
+	STX	$FFFC
+	STX	$FFFE
+	LDX	#IRQ$
+	STX	$FFF8
+	LDA	#RAMPAG
+	TFR	A,DP
+	SETDP	RAMPAG
+
+ClrRAM	LDX	#RAMstr
+	CLRA
+ClrRAM0	STA	0,X+
+	CMPX	#RAMend+1
+	BLE	ClrRAM0
+
+	JSR	clrio
+
+	CLI
+	CLRA
+	JSR	main
+	JMP	RESTART$
+
+
+clrio	SUBA	#0
+	BEQ	clrio1
+	JSR	.LINK
+
+clrio1	LDA	#$03
+	STA	ACIA
+	LDA	#$95
+	STA	ACIAst
+	STA	ACIA
+
+	CLRD
+	RTS
+
+
+* *  STASIO - This macro stores the A register to all control registers of the
+* *  Z80 SIO board.
+
+	MACR	STASIO
+	STA	SIO0A+1
+	STA	SIO0B+1
+	STA	SIO1A+1
+	STA	SIO1B+1
+	STA	SIO2A+1
+	STA	SIO2B+1
+	STA	SIO3A+1
+	STA	SIO3B+1
+	ENDM
+
+
+SIO_PRIORITY	EQU	0
+
+* *  Setup Z80SIO board for S72.  * *
+
+	PSCT
+clr_sio	SUBA	#0
+	BEQ	clrsio1
+	JSR	.LINK
+
+clrsio1	LDA	#0
+	STASIO
+	LDA	#%00011000	Reset all channels of SIO board.
+	STASIO
+
+	LDA	#2		Select register 2.
+	STASIO
+	LDA	#%00000000	  Set interrupt vector.
+	STASIO
+
+	LDA	#4		Select register 4.
+	STASIO
+	LDA	#%01001111	  Div 16, 2 stop.
+	STASIO
+
+	LDA	#1		Select register 1.
+	STASIO
+	LDA	#$1C		  Rec IRQ.
+	STASIO
+
+	LDA	#5		Select register 5.
+	STASIO
+	LDA	#%10101010	  DTR, 7 bits, no break.
+	STASIO
+
+	LDA	#3		Select register 3.
+	STASIO
+	LDA	#01000001	  7 bits Rx, Rx Enable.
+	STASIO
+
+	CLRD
+	RTS
+
+	
+	PSCT
+IRQ$	EQU	*
+
+	IFNE	_EXOR
+	JSR	PIA$
+	JSR	ACIA$
+	ENDC
+
+	IFEQ	_Z80SIO		Use this if compiled with Z80 SIO board.
+	JSR	SIO$		(Used in RV development software.)
+	ENDC
+	RTI
+
+
+PIA$	TST	PIA1B+2
+	BPL	PIA$1
+	CLRA
+*	JSR	Ack
+	LDA	PIA1B
+
+PIA$1	TST	PIA2B+2
+	BPL	PIA$2
+	CLRA
+*	JSR	LampTest
+	LDA	PIA2B
+	RTS
+
+
+	PSCT
+ACIA$	LDA	ACIA
+	BPL	ACIA$2
+	BITA	#1		Is the recieve register full?
+	BNE	ACIA$1		  Yes, it must be an RX interrupt.
+	BITA	#2		  No, but is  the transmit data register empty?
+	BNE	ACIATX		    Yes, it is empty.  So TX that data!
+	RTS			  False alarm.
+
+ACIA$1	BITA	#$70		Errors?
+	BEQ	ACIARX		  None, so RX that data!
+	LDA	ACIA+1		  Yes, disregard and return.
+ACIA$2	RTS
+
+ACIARX	LDB	RXCOUNT		If queue is full,
+	CMPB	#RXLEN
+	BLT	ACIAR1
+	LDB	ACIAst		  then disable RX interrupt
+	ANDB	#%01111111
+	STB	ACIAst
+	STB	ACIA
+	LDA	ACIA+1
+	RTS			    and return.
+
+ACIAR1	LDA	ACIA+1		  Else get new char from ACIA status reg.
+	ANDA	#%01111111	    Strip the parity bit just incase!
+	LDB	RXTAIL		    Get tail of RX queue.
+	LDX	#RXQUE		    Store the char at the end of the queue.
+	STA	B,X
+	INCB			    Increment the tail.
+	STB	RXTAIL
+	INC	RXCOUNT		    Increment the queue count.
+	CMPB	#RXLEN		    If tail>length,
+	BLT	ACIAR2
+	CLR	RXTAIL		      then tail=0.
+ACIAR2	RTS			    Return
+
+ACIATX	TST	TXCOUNT		If TX queue is empty,
+	BNE	ACIAT1
+	LDB	ACIAst		  then disable the TX interrupt
+	ANDB	#$9F
+	STB	ACIAst
+	STB	ACIA
+	RTS			  and return.
+
+ACIAT1	LDB	TXHEAD		  Else get char from head of queue.
+	LDX	#TXQUE
+	LDA	B,X
+	STA	ACIA+1		    Send it out of the ACIA.
+	DEC	TXCOUNT		    Decrement the queue count.
+	INCB			    Increment the head.
+	STB	TXHEAD
+	CMPB	#TXLEN		    If head>length,
+	BLT	ACIAT2
+	CLR	TXHEAD		      then head=0
+ACIAT2	RTS			    Return.
+
+
+SIO$	LDX	SIO0A+1
+	CLRB
+SIO$0	LDA	0,X++
+
+	BITA	#%00000001	Receive character available?
+	BNE	SIO$1
+	BSR	SIORX
+
+SIO$1	BITA	#%00000100	Transmit buffer empty?
+	BNE	SIO$2
+	BSR	SIOTX
+
+SIO$2	INCB			ACCB contains the queue index.
+	CMPX	SIO3B+1		All chips checked?
+	BLE	SIO$0		  No, check another.
+	RTS
+
+SIORX	LDY	#SIORXCNT	If queue is full,
+	LDA	B,Y
+	CMPA	RXLEN
+	BLT	SIORX1
+	LDA	#1		  disable interrupts for this channel.
+	STA	0,X
+	LDY	#SIOWR1
+	LDA	B,Y
+	ANDA	#%11100111
+	STA	B,Y
+	STA	0,X
+	RTS
+
+SIORX1	DEX			Get the character.
+	LDA	0,X
+	PSHS	D		Save the character and the index.
+
+	LDX	#SIORXTAIL	Put the tail pointer in ACCA.
+	LDA	B,X
+	PSHS	A
+
+	LDA	#RXLEN		SIORXQUE[INDEX]=RXLEN*INDEX+SIORXQUE
+	MUL
+	LDY	#SIORXQUE
+	LEAY	D,Y
+	TFR	Y,X
+
+	PULS	A		A=SIORXTAIL, Y=SIORXQUE[INDEX]
+	LEAY	A,Y		Y=SIORXQUE[INDEX][SIORXTAIL]
+	PULS	D
+	STA	0,Y		Put the character at the tail of the queue.
+
+	LDY	#SIORXCNT	Increment the queue count.
+	INC	B,Y
+
+	LDY	#SIORXTAIL	Increment tail.
+	LDA	B,Y
+	INCA
+	CMPA	#RXLEN		If tail>length
+	BLT	SIORX2
+	CLR	B,Y		  tail=0.
+SIORX2	RTS
+
+
+SIOTX	LDY	#SIORXCNT
+	TST	B,Y
+	BNE	SIOTX1
+
+	LDA	#1
+	STA	0,X
+	LDY	#SIOWR1
+	LDA	B,Y
+	ANDA	#%11111101
+	STA	B,Y
+	STA	0,X
+	RTS
+	
+SIOTX1	LDY	#SIORXHEAD
+	LDA	B,Y
+	PSHS	D		A=HEAD, B=INDEX
+
+	LDA	#TXLEN
+	MUL
+	LDY	#SIOTXQUE
+	LEAY	D,Y		Y=SIOTXQUE+TXLEN*INDEX
+	PULS	D
+	LEAY	A,Y		Y=Y+HEAD
+	
+	LDA	0,Y		Get char from head of queue.
+	DEX
+	STA	0,X		Put char in SIO data buffer.
+
+	LDY	#SIOTXCNT	Decrement count.
+	DEC	B,Y
+	STA	B,Y
+
+	LDY	#SIOTXHEAD	Increment the head.
+	LDA	B,Y
+	INCA
+	STA	B,Y
+	CMPA	#TXLEN		If head>length,
+	BLT	SIOTX2
+	CLR	B,Y		  head=0.
+SIOTX2	RTS
+	
+	
+
+	PSCT
+getc	SUBA	#2
+	BEQ	getc0
+	JSR	.LINK
+
+getc0	LDD	2,S
+	CMPB	#iodev0
+	BNE	getc1
+	BSR	getACIA
+	BRA	getc2
+
+getc1	CMPB	#iodev1
+	BLT	getc2
+	CMPB	#iodev2
+	BGT	getc2
+	PSHS	D
+	LDA	#2
+	BSR	getSIO
+
+getc2	PULS	X
+	LEAS	2,S
+	JMP	0,X
+	
+
+	PSCT
+getACIA	SUBA	#0
+	BEQ	getA0
+	JSR	.LINK
+
+getA00	TST	RXCOUNT
+	BNE	getA1
+	CLRD
+	SEC
+	BRA	getA5
+getA1	LDA	RXHEAD
+	LDX	#RXQUE
+	LDB	A,X
+	INCA
+	STA	RXHEAD
+	CMPA	#RXLEN
+	BLT	getA2
+	CLR	RXHEAD
+
+getA2	DEC	RXCOUNT
+	CLC
+	LDA	ACIAst
+	ORA	#$80
+	STA	ACIAst
+	STA	ACIA
+
+getA3	CLRA
+	CMPB	#CR
+	BNE	getA4
+	LDB	#LF
+	BRA	getA5
+getA4	CMPB	#CTRLD
+	BNE	getA5
+	LDD	#EOF
+getA5	TSTB
+	RTS
+
+
+getSIO	SUBA	#0
+	BEQ	getS0
+	JSR	.LINK
+
+getS0	LDB	2,S		Get index in ACCB.
+	LDY	#SIORXCNT
+	TST	B,Y
+	BNE	getS1
+	CLR	B,Y
+	SEC
+	BRA	getS5
+
+getS1	LDY	#SIORXHEAD
+	LDA	B,Y
+	PSHS	D
+	
+	LDY	#SIORXQUE
+	LDA	#RXLEN
+	MUL
+	LEAY	D,Y
+	PULS	D
+	LEAY	A,Y
+	LDA	0,Y
+	PSHS	A		Save character.
+
+	LDY	#SIORXHEAD	Increment head.
+	LDA	B,Y
+	INCA
+	STA	B,Y
+	CMPA	#RXLEN
+	BLT	getS
+	
+	PSCT
+putc	SUBA	#4
+	BEQ	putc0
+	JSR	.LINK
+
+putc0	LDD	4,S
+putc1	PSHS	D
+	LDA	#2
+	BSR	putchar
+	BCS	putc1
+	CMPB	#LF
+	BNE	putc3
+	LDB	#CR
+	LDA	#2
+putc2	PSHS	D
+	BSR	putchar
+	BCS	putc2
+putc3	PULS	X
+	LEAS	4,S		Does not affect Z bit.
+	JMP	0,X
+
+
+	PSCT
+putchar	SUBA	#2
+	BEQ	putchr0
+	JSR	.LINK
+
+putchr0	LDB	3,S
+putch00	LDA	TXCOUNT
+	CMPA	#TXLEN
+	BLT	putchr1
+	SEC
+	BRA	putchr3
+
+putchr1	LDA	TXTAIL
+	LDX	#TXQUE
+	STB	A,X
+	INCA
+	STA	TXTAIL
+	CMPA	#TXLEN
+	BLT	putchr2
+	CLR	TXTAIL
+putchr2	INC	TXCOUNT
+	CLC
+	LDA	ACIAst
+	ORA	#$20
+	STA	ACIAst
+	STA	ACIA
+putchr3	PULS	X		Part of a goofy RTS.
+	LDD	,S++		Recover D and set the condition codes.
+	JMP	0,X		A goofy RTS.
+
+
+read	SUBA	#6
+	BEQ	read0
+	JSR	.LINK
+
+read0	LDA	2,S
+	STA	iodev
+	LDX	4,S
+	STX	cbuff
+	LDX	6,S
+	STX	bufflen
+
+	CMPA	#iodev0
+	BNE	
+	
+
+
+* * *  These functions output 2 or 4 hex digits.  * * *
+	PSCT
+out2h	SUBA	#2
+	BEQ	out2h1
+	JSR	.LINK
+
+out4h1	LDA	2,S
+	JSR	OUT2H
+out2h1	LDA	3,S
+	JSR	OUT2H
+	PULS	X
+	LDD	,S++
+	JMP	0,X
+
+out4h	SUBA	#2
+	BEQ	out4h1
+	JSR	.LINK
+
+
+*  This routine outputs a 2 digit hex number in ACC A *
+OUT2H	PSHS	D
+	LDB	#16
+	MUL
+	BSR	OUTHX
+	PULS	D
+	ANDA	#$0F
+OUTHX	ADDA	#$90
+	DAA
+	ADCA	#$40
+	DAA
+	EXG	A,B
+	PSHS	D
+	CLRD
+	PSHS	D
+	LDA	#4
+	JSR	putc
+	RTS
+
+
+	PSCT
+INCH	LDB	ACIAst
+	ANDB	#%01111111
+	STB	ACIAst
+	STB	ACIA
+INCH1	LDB	ACIA
+	LSRB
+	BCC	INCH
+	LDB	ACIA+1
+	PSHS	B
+	LDB	ACIAst
+	ORB	#%10000000
+	STB	ACIAst
+	STB	ACIA
+	PULS	B
+	RTS
+
+
+	PSCT
+OUTCH	PSHS	D
+	LDB	ACIAst
+	PSHS	B
+	ANDB	#%10011111
+	STB	ACIAst
+	STB	ACIA
+	LDA	#2
+OUTCH1	BITA	ACIA
+	BEQ	OUTCH1
+	STB	ACIA+1
+	PULS	B
+	STB	ACIAst
+	STB	ACIA
+	PULS	D
+	RTS
+
+
+	ASCT
+	ORG	$FFF2
+VECTOR$	EQU	*
+
+	FDB	0		Software Interrupt #3
+	FDB	0		Software Interrupt #2
+	FDB	0		Fast Interrupt Request
+	FDB	IRQ$		Interrupt Request
+	FDB	0		Software Interrupt
+	FDB	RESTART$	Non-Maskable Interrupt
+	FDB	RESTART$	Restart
+
+	end
+󉫕	�&�  WINDEX.CRV.VDI/* a UNIX-like window package for VINNIX */
+
+#include	"c:\include\windex.h"
+#include	"c:\include\wyse.h"
+
+fopenw(name, ul, lr)
+char		*name;
+coordinate	*ul;
+coordinate	*lr;
+{
+/* window_descriptor	window[MAXWINDOWS]; 
+  int			windex; */
+  register char			x, y;
+  char				x1, x2, y1, y2;
+  char				namelen, wlen;
+
+  x1=ul->X;
+  y1=ul->Y;
+  x2=lr->X;
+  y2=lr->Y;
+
+  namelen=strlen(name);
+  wlen=x2-x1;  
+/*  strcpy(window[windex].Name, name);
+  window[windex].UpperLeft.X = x1;
+  window[windex].UpperLeft.Y = y1;
+  window[windex].LowerRight.X = x2; 
+  window[windex].LowerRight.Y = y2; */
+
+  Cursor(x1,y1);
+  printf(TopLeft);
+  for (x=x1+1; x<=x2-1; x++) printf(Horizontal);
+  printf(TopRight);
+
+  for (y=y1+1; y<=y2-1; y++) {
+    Cursor(x1,y); 
+    printf(Vertical);
+    for (x=x1+1; x<=x2-1; x++) {
+      printf(" ");
+    }
+    printf(Vertical);
+  }
+
+  Cursor(x1,y2);
+  printf(BottomLeft);
+  for (x=x1+1; x<=x2-1; x++) printf(Horizontal);
+  printf(BottomRight);
+
+  if (namelen<wlen) {
+    Cursor(x1+wlen/2-namelen/2-2, y1);
+    Reverse;
+    printf(" %s ", name);
+    Normal;
+  }
+  Cursor(x1+1,y1+1);
+/*  windex++;
+  return(windex+2); */
+  return(0);
+}
+󉫕	|&�  
+WINDEX.LSTRV.VDI
+
+
+windex.c                                            Wintek 6809 Assembler, V3.0 r14    Page 1
+                                                    05/17/89    07:25:42
+
+
+      0000 0000 /* a UNIX-like window package for VINNIX */
+      0000 0000 
+      0000 0000 #include	"c:\include\windex.h"
+      0000 0000 /* a UNIX-like window package for VINNIX */
+      0000 0000 
+      0000 0000 #define	MAXWINDOWS	3
+      0000 0000 
+      0000 0000 typedef struct {
+      0000 0000 	int	X;
+      0000 0000 	int	Y;
+      0000 0000 } coordinate;
+      0000 0000 
+      0000 0000 typedef struct {
+      0000 0000 	char		Name[10];
+      0000 0000 	coordinate	UpperLeft;
+      0000 0000 	coordinate	LowerRight;
+      0000 0000 } window_descriptor;
+      0000 0000 #include	"c:\include\wyse.h"
+      0000 0000 #define	Clear	printf("\033*")
+      0000 0000 #define	Home	printf("\033{")
+      0000 0000 #define Cursor(X,Y)	printf("\033=%c%c", (Y)+32, (X)+32)
+      0000 0000 
+      0000 0000 #define TopLeft		"\033H2"
+      0000 0000 #define TopRight	"\033H3"
+      0000 0000 #define BottomLeft	"\033H1"
+      0000 0000 #define BottomRight	"\033H5"
+      0000 0000 #define Horizontal	"\033H:"
+      0000 0000 #define Vertical	"\033H6"
+      0000 0000 
+      0000 0000 #define Reverse	printf("\033G4")
+      0000 0000 #define Normal	printf("\033G0")
+      0000 0000 #define Blank	printf("\033G3")
+      0000 0000 #define RevBlank	printf("\033G5")
+      0000 0000 
+      0000 0000 #define	UP	11
+      0000 0000 #define DOWN	10
+      0000 0000 #define	LEFT	8
+      0000 0000 #define	RIGHT	12
+      0000 0000 
+      0000 0000 #define MSG(STRING)	printf("\033F%s\015", STRING)
+      0000 0000 
+      0000 0000 #define Print_ON	printf("\030");
+      0000 0000 #define	Print_OFF	printf("\024");
+      0000 0000 
+      0000 0000 fopenw(name, ul, lr)
+      0007 0000 char		*name;
+      0007 0000 coordinate	*ul;
+      0007 0000 coordinate	*lr;
+      0007 0000 {
+      0007 0000 /* window_descriptor	window[MAXWINDOWS]; 
+      0007 0000   int			windex; */
+      0007 0000   register char			x, y;
+      0007 0000   char				x1, x2, y1, y2;
+      0007 0000   char				namelen, wlen;
+      0009 0000 
+
+
+
+windex.c                                            Wintek 6809 Assembler, V3.0 r14    Page 2
+                                                    05/17/89    07:25:42
+
+
+      0009 0000   x1=ul->X;
+      000F 0000   y1=ul->Y;
+      0013 0000   x2=lr->X;
+      0019 0000   y2=lr->Y;
+      001D 0000 
+      001D 0000   namelen=strlen(name);
+      0028 0000   wlen=x2-x1;  
+      002E 0000 /*  strcpy(window[windex].Name, name);
+      002E 0000   window[windex].UpperLeft.X = x1;
+      002E 0000   window[windex].UpperLeft.Y = y1;
+      002E 0000   window[windex].LowerRight.X = x2; 
+      002E 0000   window[windex].LowerRight.Y = y2; */
+      002E 0000 
+      002E 0000   Cursor(x1,y1);
+      0048 0000   printf(TopLeft);
+      0052 0000   for (x=x1+1; x<=x2-1; x++) printf(Horizontal);
+      0076 0000   printf(TopRight);
+      0080 0000 
+      0080 0000   for (y=y1+1; y<=y2-1; y++) {
+      0096 0000     Cursor(x1,y); 
+      00B0 0000     printf(Vertical);
+      00BA 0000     for (x=x1+1; x<=x2-1; x++) {
+      00D0 0000       printf(" ");
+      00DA 0000     }
+      00DE 0000     printf(Vertical);
+      00E8 0000   }
+      00EC 0000 
+      00EC 0000   Cursor(x1,y2);
+      0106 0000   printf(BottomLeft);
+      0110 0000   for (x=x1+1; x<=x2-1; x++) printf(Horizontal);
+      0134 0000   printf(BottomRight);
+      013E 0000 
+      013E 0000   if (namelen<wlen) {
+      0144 0000     Cursor(x1+wlen/2-namelen/2-2, y1);
+      0173 0000     Reverse;
+      017D 0000     printf(" %s ", name);
+      018C 0000     Normal;
+      0196 0000   }
+      0196 0000   Cursor(x1+1,y1+1);
+      01B0 0000 /*  windex++;
+      01B0 0000   return(windex+2); */
+      01B0 0000   return(0);
+      01B4 0000 }
+󉫕	G|&  
+WINDEX.RELRV.VDIS009000077696E64657867
+S80C0000020000666F70656E7762
+S4060000020006F1
+S30B000085726F6D6461746187
+S406000702002DC3
+S4060000050006EE
+S406002E02004782
+S406000705000AE3
+S406004802006748
+S406000B05000EDB
+S40600680200751A
+S406000F050012D3
+S4060076020095EC
+S4060013050019C8
+S40600960200AFB2
+S406001A05001DBD
+S40600B00200CF78
+S406001E05001FB7
+S40600D00200DD4A
+S4060020050023B1
+S40600DE0200EB2E
+S406002405002AA6
+S40600EC02010505
+S406002B05002E9B
+S4060106020125CA
+S406002F05003293
+S40601260201339C
+S40600330500368B
+S40601340201437E
+S406003705003D80
+S40601440201723F
+S406003E05004175
+S406017302017C06
+S40600420500466C
+S406017D02018BED
+S406004705004A63
+S406018C020195D4
+S406004B05005158
+S40601960201B8A7
+S20A0000020480062703BD82
+S7090005022E4C494E4B93
+S207000502C0000031
+S2220007021C3278EE6CECC4E765EC42E763EE6AECC4E764EC42E762EC6E34068602BD9D
+S70A0024027374726C656E37
+S210002402C0000007E761E664E065E7E460
+S20C000005061B3D256325630080
+S21F002E0200CEC50000143440E6654FC300203406E6694FC3002034068606BDDA
+S70A0046027072696E74661A
+S207004602C00000F0
+S209000705031B48320052
+S20F00480200CEC500070434408602BD4F
+S70A0050027072696E746610
+S21E005002C0000015E665CB01E767E6644F8300013406E6694F10A3E12E0E90
+S209000B05031B483A0046
+S20F00680200CEC5000B0434408602BD2B
+S70A0070027072696E7466F0
+S20C007002C00000036C6720E2E9
+S209000F05031B48330049
+S20F00760200CEC5000F0434408602BD19
+S70A007E027072696E7466E2
+S21E007E02C0000015E663CB01E766E6624F8300013406E6684F10A3E12E5620
+S20C001305061B3D25632563006D
+S21F00960200CEC50013143440E6684FC300203406E6694FC3002034068606BD5C
+S70A00AE027072696E7466B2
+S20700AE02C0000088
+S209001A05031B4836003B
+S20F00B00200CEC5001A0434408602BDD4
+S70A00B8027072696E7466A8
+S21E00B802C0000015E665CB01E767E6644F8300013406E6694F10A3E12E0E28
+S207001E05012000B4
+S20F00D00200CEC5001E0434408602BDB0
+S70A00D8027072696E746688
+S20C00D802C00000036C6720E281
+S209002005031B48360035
+S20F00DE0200CEC500200434408602BDA0
+S70A00E6027072696E74667A
+S20C00E602C00000036C66209ABC
+S20C002405061B3D25632563005C
+S21F00EC0200CEC50024143440E6644FC300203406E6694FC3002034068606BDF9
+S70A0104027072696E74665B
+S207010402C0000031
+S209002B05031B4831002F
+S20F01060200CEC5002B0434408602BD6C
+S70A010E027072696E746651
+S21E010E02C0000015E665CB01E767E6644F8300013406E6694F10A3E12E0ED1
+S209002F05031B483A0022
+S20F01260200CEC5002F0434408602BD48
+S70A012E027072696E746631
+S20C012E02C00000036C6720E22A
+S209003305031B48350023
+S20F01340200CEC500330434408602BD36
+S70A013C027072696E746623
+S20E013C02C0000005E661E1E424526B
+S20C003705061B3D256325630049
+S22501440200CEC500371A3440E6654FC300203406E6654F47563406E66B4F3406E6684F4756FF
+S2140162020EE3E1A3E1830002C3002034068606BD45
+S70A0171027072696E7466EE
+S207017102C00000C4
+S209003E05031B4734001A
+S20F01730200CEC5003E0434408602BDEC
+S70A017B027072696E7466E4
+S207017B02C00000BA
+S20A004205042025732000D2
+S214017D0200CEC50042093440ECE81034068604BDB4
+S70A018A027072696E7466D5
+S207018A02C00000AB
+S209004705031B47300015
+S20F018C0200CEC500470434408602BDCA
+S70A0194027072696E7466CB
+S207019402C00000A1
+S20C004B05061B3D256325630035
+S21F01960200CEC5004B143440E6654FC300213406E6694FC3002134068606BD24
+S70A01AE027072696E7466B1
+S20F01AE02C00000065F4F3068330816E2
+S70901B7022E52455432F1
+S20701B702E0FFFE61
+S9030000FC
+
+󉫕	
+*�   #README
+VINNIX.VDI
+
+	This directory belong to Vinnie.
+
+	This is the original O.S. that can be called by C language.
+󉫕	"b�'7  MAIN.C
+VINNIX.VDI#include	<c:\include\stdio.h>
+
+#define		_WINTEK
+#include	<c:\include\map.h>
+
+#include	<vinnix.h>
+
+
+char	ACK;
+
+main()
+{
+  EXTERN HANDLER	acia1;
+  EXTERN HANDLER	ack;
+  EXTERN TASK		tick;
+  EXTERN TASK		test;
+
+  char		c;
+  unsigned int	address;
+
+  poke(PIA1A+2, 0x00);
+  poke(PIA1A,   0xFF);
+  poke(PIA1A+2, 0x5 );
+  poke(PIA2A+2, 0x5 );
+  clrio(ACIA1);
+
+  setrt(PIA2A+2, WDT, WDTMSK);
+  attch(&acia1, ACIA1, 0x80);
+  attch(&ack, PIA1A+2, 0x80);
+  start(&tick, 0, 0);
+  start(&test, 0, 0);
+
+  next(); 
+} 󉫕	$d�'?)  MAIN.LST
+VINNIX.VDI
+
+
+                                                    Wintek 6809 Assembler, V3.0 r14    Page 1
+                                                    10/19/89    15:15:44
+
+
+     0000               	OPT	E
+     0000               	GLOBAL	main
+     0000               	EXTERN	next
+     0000               	EXTERN	start
+     0000               	EXTERN	attch
+     0000               	EXTERN	setrt
+     0000               	EXTERN	clrio
+     0000               	EXTERN	poke
+     0000               	EXTERN	test
+     0000               	EXTERN	tick
+     0000               	EXTERN	ack
+     0000               	EXTERN	acia1
+     0000               	GLOBAL	ACK
+     0000               	NAM	main
+     0000               	DSCT	
+                        * #include	<c:\include\stdio.h>
+                        * 
+                        * /* VINNIX Standard Input/Output Declarations */
+                        * 
+                        * #ifndef	_stdio
+                        * 
+                        * #define _stdio
+                        * #define NULL    0
+                        * #define	NIL	0
+                        * 
+                        * #define EOF     (-1)
+                        * 
+                        * #define TRUE    1
+                        * #define FALSE   0
+                        * 
+                        * #define ON	1
+                        * #define OFF	0
+                        * 
+                        * #define	stdin	1
+                        * #define	stdout	1
+                        * #define	stderr	1
+                        * 
+                        * #define	auxin	2
+                        * #define auxout	2
+                        * 
+                        * typedef	int	BOOLEAN;
+                        * typedef	char	BYTE;
+                        * 
+                        * #endif
+                        * 
+                        * #define		_WINTEK
+                        * #include	<c:\include\map.h>
+                        * 
+                        * /* *  Master Memory Configuration Declaration File   * */
+                        * /*     By Vincente D'Ingianni Jr.  1/5/89              */
+                        * /* * * * * * * * * * * * * * * * * * * * * * * * * * * */
+                        * 
+                        * 
+                        * #ifdef	_WINTEK
+                        * /* *  Wintek 6809 Control Module Memory Map  * */
+
+
+
+c:\include\map.h                                    Wintek 6809 Assembler, V3.0 r14    Page 2
+                                                    10/19/89    15:15:44
+
+
+                        * 
+                        * #define	RAMstr	0x0000	/* Beginning of RAM */
+                        * #define	RAMend	0x0FFF	/* End of RAM */
+                        * 
+                        * /* 6821 Peripheral Interface Adapters */
+                        * #define	PIA1A	0x1280
+                        * #define	PIA1B	0x1281
+                        * #define	PIA2A	0x1300
+                        * #define	PIA2B	0x1301
+                        * 
+                        * /* 6850 Asynchronous Communication Interface Adapters */
+                        * #define	ACIA1	0x1140
+                        * #define	ACIA2	0x1180
+                        * #endif
+                        * 
+                        * 
+                        * #ifdef _MIKUL3
+                        * /* *  MIKUL 6809-3 Rev. 5 Monocard Microcomputer  * */
+                        * 
+                        * #define	RAMstr	0x0000	/* Beginning of RAM */
+                        * #define RAMend	0x0FFF	/* End of RAM */
+                        * 
+                        * /* 6821 Peripheral Interface Adapters */
+                        * #define PIA1A	0x8400
+                        * #define	PIA1B	0x8401
+                        * #define	PIA2A	0x8408
+                        * #define	PIA2B	0x8409
+                        * 
+                        * /* Programable Timer */
+                        * #define PTM	0x8410
+                        * 
+                        * /* 6850 Asynchronous Communication Interface Adapters */
+                        * #define	ACIA	0x8418
+                        * #endif
+                        * 
+                        * 
+                        * #ifdef	_EXOR
+                        * /* *  Motorolla 6809 EXORCISER  * */
+                        * 
+                        * #endif
+                        * 
+                        * #ifdef	_Z80SIO
+                        * /* *  MIKUL 6883 8 Channel Asynchronous Modem Interface  * */
+                        * #define	SIO0A	0x8600
+                        * #define SIO0B	0x8602
+                        * #define SIO1A	0x8604
+                        * #define	SIO1B	0x8606
+                        * 
+                        * #define SIO2A	0x8608
+    
